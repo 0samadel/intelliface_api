@@ -8,25 +8,25 @@ const axios = require('axios');
 dotenv.config();
 const app = express();
 
-// --- CORS CONFIGURATION ---
-const corsOptions = {
-  origin: [
-    'http://localhost:60153', // Flutter Web (Dev)
-    'http://localhost:5173',   // Common Flutter web port (Vite/WebDev)
-    'https://intelliface-admin.web.app', // Example deployed frontend
-    'https://intelliface-api.onrender.com', // Optional if needed for testing
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  credentials: true,
-};
-app.use(cors(corsOptions));
+// ✅ CORS fix for Flutter Web
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  next();
+});
 
-// --- MIDDLEWARE ---
+// Body parsers and static files
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use('/uploads', express.static(path.join(__dirname, 'Uploads')));
 
-// --- ROUTES ---
+// --- Routes ---
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
@@ -36,6 +36,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const todoRoutes = require('./routes/todo.routes');
 const profileRoutes = require('./routes/profileRoutes');
 
+// --- Mount routes ---
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/attendance', attendanceRoutes);
@@ -45,7 +46,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/todos', todoRoutes);
 app.use('/api/profile', profileRoutes);
 
-// --- FACE ENROLLMENT ROUTE ---
+// --- New route for face enrollment ---
 app.post('/api/face/enroll', async (req, res) => {
   try {
     const { userId, imageBase64 } = req.body;
@@ -67,26 +68,29 @@ app.post('/api/face/enroll', async (req, res) => {
   }
 });
 
-// --- GLOBAL ERROR HANDLER ---
+// --- Global error handler ---
 app.use((err, req, res, next) => {
-  console.error("--- GLOBAL ERROR HANDLER CAUGHT ---");
+  console.error("--- GLOBAL ERROR HANDLER ---");
   console.error("Error Name:", err.name);
-  console.error("Error Message:", err.message);
-  console.error("Error Stack:", err.stack);
+  console.error("Message:", err.message);
+  console.error("Stack:", err.stack);
+
   if (err.name === 'CastError' && err.kind === 'ObjectId') {
-    return res.status(400).json({ success: false, message: `Invalid ID format for resource: ${err.path}` });
+    return res.status(400).json({ success: false, message: `Invalid ID format: ${err.path}` });
   }
+
   if (err.name === 'ValidationError') {
     const messages = Object.values(err.errors).map(val => val.message);
     return res.status(400).json({ success: false, message: messages.join(', ') });
   }
+
   res.status(err.statusCode || 500).json({
     success: false,
-    message: err.message || 'An unexpected internal server error occurred.',
+    message: err.message || 'Internal Server Error',
   });
 });
 
-// --- DATABASE + SERVER START ---
+// --- Connect to MongoDB ---
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB Connected...'))
   .catch(err => {
@@ -94,16 +98,18 @@ mongoose.connect(process.env.MONGO_URI)
     process.exit(1);
   });
 
+// --- Start server ---
 const PORT = process.env.PORT || 5100;
 app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
 });
 
-// --- PROCESS ERRORS ---
+// --- Unhandled errors ---
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  console.error('Unhandled Rejection:', reason);
   process.exit(1);
 });
+
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
   process.exit(1);
