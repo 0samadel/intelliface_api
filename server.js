@@ -22,13 +22,11 @@ const app = express(); // Initialize Express app
 // 2. CORS CONFIGURATION
 // ─────────────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
-  'http://localhost:62088',            // Flutter Web dev
+  'http://localhost:62088',              // Flutter Web dev
   'http://127.0.0.1:62088',
-  'http://localhost:5173',             // Vite/React Dev
-  'https://intelliface-admin.web.app', // Production domain
-
-  'http://localhost:60749',            // Your current Flutter port
-  'http://127.0.0.1:60749',
+  'http://localhost:5173',               // Vite/React Dev
+  'https://intelliface-admin.web.app',   // Firebase frontend (✅ Production)
+  'https://intelliface-api.onrender.com',// Optional: Self-origin calls
 ];
 
 app.use(cors({
