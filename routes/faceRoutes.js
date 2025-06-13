@@ -22,7 +22,7 @@ const upload   = require('../middleware/faceUploadMiddleware');
 /* ============================================================================
  * 2. Config: Python microservice base URL
  * ========================================================================== */
-const PYTHON_SERVICE_URL = 'http://localhost:5001'; // Flask service URL
+const PYTHON_SERVICE_URL = 'https://face-rec-service-1.onrender.com'; // Flask service URL
 
 /* ============================================================================
  * 3. Route: Enroll Face
