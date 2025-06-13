@@ -1,57 +1,50 @@
 // =============================================================================
-// File: server.js
-// Description: Initializes Express app, connects to MongoDB, sets up routes,
-// middleware, CORS handling, error handling, and starts the server.
+// File: server.js (Main Entry Point)
+// Description: Initializes the Express app, connects to MongoDB, sets up routes,
+// CORS, middleware, error handling, and launches the server.
 // =============================================================================
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. DEPENDENCIES & SETUP
 // ─────────────────────────────────────────────────────────────────────────────
-const express = require('express');
-const mongoose = require('mongoose');
-const dotenv = require('dotenv');
-const cors = require('cors');
-const path = require('path');
-const axios = require('axios');
+const express    = require('express');
+const mongoose   = require('mongoose');
+const dotenv     = require('dotenv');
+const cors       = require('cors');
+const path       = require('path');
+const axios      = require('axios');
 
-dotenv.config();
+dotenv.config(); // Load environment variables from .env file
 
-const app = express();
+const app = express(); // Initialize Express app
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. CORS CONFIGURATION (DEBUG MODE)
+// 2. CORS CONFIGURATION
 // ─────────────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
-  'https://intelliface-admin.web.app',    // your production frontend (Firebase or other)
-  'https://intelliface-api.onrender.com', // allow self-origin calls if needed
-  'http://localhost:62088',               // Flutter Web dev
+  'http://localhost:62088',            // Flutter Web dev
   'http://127.0.0.1:62088',
+  'http://localhost:5173',             // Vite/React Dev
+  'https://intelliface-admin.web.app', // Production domain
 ];
 
-const corsOptions = {
+app.use(cors({
   origin: (origin, callback) => {
-    console.log('🌐 Incoming Origin:', origin);
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.log('❌ CORS Blocked:', origin);
-      callback(new Error('CORS: Origin not allowed'));
-    }
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('CORS: Origin not allowed'));
   },
-  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-};
-
-app.use(cors(corsOptions));
-
+  credentials: false,
+}));
+app.options('*', cors()); // Allow preflight requests
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. MIDDLEWARE
 // ─────────────────────────────────────────────────────────────────────────────
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use('/uploads', express.static(path.join(__dirname, 'Uploads')));
+app.use(express.json()); // Parse JSON requests
+app.use(express.urlencoded({ extended: false })); // Parse URL-encoded data
+app.use('/uploads', express.static(path.join(__dirname, 'Uploads'))); // Serve static files
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. ROUTES
@@ -64,15 +57,14 @@ app.use('/api/departments', require('./routes/departmentRoutes'));
 app.use('/api/dashboard', require('./routes/dashboardRoutes'));
 app.use('/api/todos', require('./routes/todo.routes'));
 app.use('/api/profile', require('./routes/profileRoutes'));
-app.use('/api/faces', require('./routes/faceRoutes'));
+app.use('/api/face', require('./routes/faceRoutes')); // Face enroll & verify
 
-// Optional: test route to communicate with face recognition service
+// Optional route for testing direct communication with Python face service
 app.post('/enroll_face', async (req, res) => {
   try {
     const { userId, imageBase64 } = req.body;
-    if (!userId || !imageBase64) {
+    if (!userId || !imageBase64)
       return res.status(400).json({ message: 'userId and imageBase64 are required.' });
-    }
 
     const faceResponse = await axios.post('http://localhost:5001/generate-embedding', {
       employee_id: userId,
@@ -89,7 +81,7 @@ app.post('/enroll_face', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. GLOBAL ERROR HANDLING
+// 5. GLOBAL ERROR HANDLING MIDDLEWARE
 // ─────────────────────────────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
   console.error("\n--- GLOBAL ERROR HANDLER ---");
@@ -98,7 +90,7 @@ app.use((err, req, res, next) => {
   console.error("Stack:", err.stack);
 
   if (err.name === 'CastError' && err.kind === 'ObjectId') {
-    return res.status(400).json({ success: false, message: `Invalid ID format: ${err.path}` });
+    return res.status(400).json({ success: false, message: Invalid ID format: ${err.path} });
   }
 
   if (err.name === 'ValidationError') {
@@ -119,21 +111,21 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('✅ MongoDB Connected...'))
   .catch(err => {
     console.error('❌ MongoDB Connection Error:', err.message);
-    process.exit(1);
+    process.exit(1); // Exit app on DB connection failure
   });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 7. SERVER START
+// 7. START THE SERVER
 // ─────────────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5100;
 app.listen(PORT, () => {
-  console.log(`🚀 Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+  console.log(🚀 Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT});
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 8. PROCESS-LEVEL ERROR HANDLERS
 // ─────────────────────────────────────────────────────────────────────────────
-process.on('unhandledRejection', (reason) => {
+process.on('unhandledRejection', (reason, promise) => {
   console.error('🚨 Unhandled Promise Rejection:', reason);
   process.exit(1);
 });
@@ -142,3 +134,4 @@ process.on('uncaughtException', (error) => {
   console.error('🔥 Uncaught Exception:', error);
   process.exit(1);
 });
+/* ───────────────────────────────────────────────────────────────────────────── */
