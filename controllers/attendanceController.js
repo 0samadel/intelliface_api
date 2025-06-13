@@ -1,21 +1,21 @@
 // ────────────────────────────────────────────────────────────────────────────────
-// File    : controllers/attendanceController.js
-// Purpose : Handles employee check-in/out with face/location verification and attendance management
+// File    : controllers/attendanceController.js (FINALIZED)
+// Purpose : Handles check-in/out logic by first verifying the face via the
+//           face verification service, then handling attendance logic.
 // ────────────────────────────────────────────────────────────────────────────────
 
 const Attendance = require('../models/Attendance');
 const User = require('../models/User');
 const Location = require('../models/Location');
+const moment = require('moment');
 const axios = require('axios');
 const FormData = require('form-data');
-const fs = require('fs');
-const moment = require('moment');
 
 const PYTHON_SERVICE_URL = 'https://face-rec-service-1.onrender.com';
-const AXIOS_TIMEOUT = 90000; // 90 seconds
+const AXIOS_TIMEOUT = 90000;
 
 function getDistanceInMeters(lat1, lon1, lat2, lon2) {
-    const R = 6371000; // Earth's radius in meters
+    const R = 6371000;
     const toRad = (deg) => deg * Math.PI / 180;
     const dLat = toRad(lat2 - lat1);
     const dLon = toRad(lon2 - lon1);
@@ -24,42 +24,72 @@ function getDistanceInMeters(lat1, lon1, lat2, lon2) {
     return R * c;
 }
 
-const cleanupFile = (file) => {
-  if (file && fs.existsSync(file.path)) {
-    fs.unlinkSync(file.path);
-  }
-};
-
-// controllers/attendanceController.js (WITH HEAVY DEBUGGING)
-
 // ================== CHECK-IN ==================
 exports.checkIn = async (req, res, next) => {
-  // ... (all the console logs and initial checks are good)
-  
-  try {
-    // ... (user finding logic is good)
-    
-    // --- Face Verification ---
-    const form = new FormData();
-    form.append('face', fs.createReadStream(req.file.path));
-    form.append('stored_embedding', JSON.stringify(user.faceEmbeddings));
+    const { latitude, longitude } = req.body;
+    const userId = req.user.userId;
 
-    // The ONLY change is here: remove the headers property
-    const pyResponse = await axios.post(`${PYTHON_SERVICE_URL}/compare-faces`, form, {
-        timeout: AXIOS_TIMEOUT
-    });
-    
-    if (!pyResponse.data.is_match) {
-        return res.status(401).json({ message: 'Face verification failed. Please try again.' });
+    if (!req.file || !latitude || !longitude) {
+        return res.status(400).json({ message: 'Face image, latitude, and longitude are required.' });
     }
-    
-    // ... (rest of the logic is good)
 
-  } catch (error) {
-    // ...
-  } finally {
-    // ...
-  }
+    try {
+        const user = await User.findById(userId).select('+faceEmbeddings').populate({
+            path: 'department',
+            populate: { path: 'location' }
+        });
+
+        if (!user || !user.faceEmbeddings?.length) {
+            return res.status(404).json({ message: 'User not found or face is not enrolled.' });
+        }
+
+        // --- Step 1: Face Verification ---
+        const form = new FormData();
+        form.append('face', req.file.buffer, { filename: req.file.originalname });
+        form.append('stored_embedding', JSON.stringify(user.faceEmbeddings));
+
+        const pyResponse = await axios.post(`${PYTHON_SERVICE_URL}/compare-faces`, form, {
+            timeout: AXIOS_TIMEOUT
+        });
+
+        if (!pyResponse.data.is_match) {
+            return res.status(401).json({ message: 'Face verification failed.' });
+        }
+        
+        // --- Face is verified, now proceed with attendance logic ---
+        if (!user.department?.location) {
+            return res.status(400).json({ message: 'You are not assigned to a department with a location.' });
+        }
+
+        const officeLocation = user.department.location;
+        const distance = getDistanceInMeters(latitude, longitude, officeLocation.latitude, officeLocation.longitude);
+        if (distance > officeLocation.radius) {
+            return res.status(403).json({ message: `Check-in denied. You are outside the work radius.` });
+        }
+
+        const todayStart = moment().startOf('day').toDate();
+        const todayEnd = moment().endOf('day').toDate();
+        const existingRecord = await Attendance.findOne({ userId, checkInTime: { $gte: todayStart, $lte: todayEnd } });
+        if (existingRecord) {
+            return res.status(400).json({ message: 'You have already checked in today.' });
+        }
+
+        const checkInTime = moment();
+        const onTimeDeadline = moment().startOf('day').hour(9).minute(0).second(0);
+        const status = checkInTime.isAfter(onTimeDeadline) ? 'Late' : 'Present';
+        
+        const attendance = new Attendance({ userId, checkInTime: checkInTime.toDate(), status, location: { latitude, longitude } });
+        await attendance.save();
+        
+        const newRecord = await Attendance.findById(attendance._id).populate('userId', 'fullName employeeId');
+        res.status(201).json({ message: `Checked in successfully as ${status}!`, attendance: newRecord });
+
+    } catch (error) {
+        console.error('Check-in Controller Error:', error.response?.data || error.message);
+        const message = error.response?.data?.message || "Check-in process failed.";
+        const status = error.response?.status || 500;
+        res.status(status).json({ message });
+    }
 };
 
 // ================== CHECK-OUT ==================
@@ -75,13 +105,11 @@ exports.checkOut = async (req, res, next) => {
             return res.status(404).json({ message: 'User not found or face not enrolled.' });
         }
 
-        // --- Face Verification ---
         const form = new FormData();
-        form.append('face', fs.createReadStream(req.file.path));
+        form.append('face', req.file.buffer, { filename: req.file.originalname });
         form.append('stored_embedding', JSON.stringify(user.faceEmbeddings));
         
         const pyResponse = await axios.post(`${PYTHON_SERVICE_URL}/compare-faces`, form, {
-            headers: form.getHeaders(),
             timeout: AXIOS_TIMEOUT
         });
 
@@ -89,10 +117,9 @@ exports.checkOut = async (req, res, next) => {
             return res.status(401).json({ message: 'Face verification failed for check-out.' });
         }
 
-        // --- Find today's record to update ---
-        const todayStart = moment().startOf('day');
-        const todayEnd = moment().endOf('day');
-        const attendanceRecord = await Attendance.findOne({ userId, checkInTime: { $gte: todayStart.toDate(), $lte: todayEnd.toDate() } });
+        const todayStart = moment().startOf('day').toDate();
+        const todayEnd = moment().endOf('day').toDate();
+        const attendanceRecord = await Attendance.findOne({ userId, checkInTime: { $gte: todayStart, $lte: todayEnd } });
 
         if (!attendanceRecord) {
             return res.status(404).json({ message: 'No check-in record found for today.' });
@@ -106,29 +133,24 @@ exports.checkOut = async (req, res, next) => {
         
         const updatedRecord = await Attendance.findById(attendanceRecord._id).populate('userId', 'fullName employeeId');
         res.status(200).json({ message: 'Checked out successfully!', attendance: updatedRecord });
-
     } catch (error) {
         console.error('Check-out Controller Error:', error.response?.data || error.message);
-        next(error);
-    } finally {
-        cleanupFile(req.file);
+        const message = error.response?.data?.message || "Check-out process failed.";
+        const status = error.response?.status || 500;
+        res.status(status).json({ message });
     }
 };
 
-// ================== GET ALL ATTENDANCE ==================
+// Other controller functions
 exports.getAllAttendance = async (req, res) => {
   try {
-    const records = await Attendance.find()
-      .sort({ checkInTime: -1 })
-      .populate('userId', 'fullName username employeeId');
+    const records = await Attendance.find().sort({ checkInTime: -1 }).populate('userId', 'fullName username employeeId');
     res.json(records);
   } catch (err) {
-    console.error("❌ Get All Attendance Error:", err);
-    res.status(500).json({ error: 'Server error: ' + err.message });
+    res.status(500).json({ message: 'Server error: ' + err.message });
   }
 };
 
-// ================== DELETE ATTENDANCE ==================
 exports.deleteAttendance = async (req, res) => {
   try {
     const deletedRecord = await Attendance.findByIdAndDelete(req.params.id);
@@ -137,29 +159,18 @@ exports.deleteAttendance = async (req, res) => {
     }
     res.json({ message: 'Attendance record deleted successfully.' });
   } catch (err) {
-    console.error("❌ Delete Attendance Error:", err);
-    res.status(500).json({ error: 'Server error: ' + err.message });
+    res.status(500).json({ message: 'Server error: ' + err.message });
   }
 };
 
-// ================== GET TODAY'S ATTENDANCE FOR USER ==================
 exports.getTodaysAttendanceForUser = async (req, res) => {
   try {
     const userIdFromToken = req.user.userId;
     const todayStart = moment().startOf('day').toDate();
     const todayEnd = moment().endOf('day').toDate();
-
-    const attendanceRecord = await Attendance.findOne({
-      userId: userIdFromToken,
-      checkInTime: { $gte: todayStart, $lte: todayEnd }
-    }).populate('userId', 'fullName username employeeId');
-
-    if (!attendanceRecord) {
-        return res.status(200).json(null); // Return null explicitly if no record found
-    }
-    res.json(attendanceRecord);
+    const attendanceRecord = await Attendance.findOne({ userId: userIdFromToken, checkInTime: { $gte: todayStart, $lte: todayEnd } }).populate('userId', 'fullName employeeId');
+    res.status(200).json(attendanceRecord); // Send record or null
   } catch (err) {
-    console.error("❌ Today's Attendance Error:", err);
-    res.status(500).json({ error: 'Server error while fetching today\'s attendance.' });
+    res.status(500).json({ message: 'Server error while fetching today\'s attendance.' });
   }
 };
