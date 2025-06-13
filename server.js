@@ -21,10 +21,22 @@ const app = express();
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. CORS CONFIGURATION (DEBUG MODE)
 // ─────────────────────────────────────────────────────────────────────────────
+const allowedOrigins = [
+  'https://intelliface-admin.web.app',    // your production frontend (Firebase or other)
+  'https://intelliface-api.onrender.com', // allow self-origin calls if needed
+  'http://localhost:62088',               // Flutter Web dev
+  'http://127.0.0.1:62088',
+];
+
 const corsOptions = {
   origin: (origin, callback) => {
     console.log('🌐 Incoming Origin:', origin);
-    callback(null, true); // Allow all for testing
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log('❌ CORS Blocked:', origin);
+      callback(new Error('CORS: Origin not allowed'));
+    }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -32,6 +44,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. MIDDLEWARE
