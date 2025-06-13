@@ -57,7 +57,7 @@ app.use('/api/departments', require('./routes/departmentRoutes'));
 app.use('/api/dashboard', require('./routes/dashboardRoutes'));
 app.use('/api/todos', require('./routes/todo.routes'));
 app.use('/api/profile', require('./routes/profileRoutes'));
-app.use('/api/face', require('./routes/faceRoutes')); // Face enroll & verify
+app.use('/api/faces', require('./routes/faceRoutes')); // Face enroll & verify
 
 // Optional route for testing direct communication with Python face service
 app.post('/enroll_face', async (req, res) => {
@@ -90,7 +90,7 @@ app.use((err, req, res, next) => {
   console.error("Stack:", err.stack);
 
   if (err.name === 'CastError' && err.kind === 'ObjectId') {
-return res.status(400).json({ success: false, message: `Invalid ID format: ${err.path}` });
+    return res.status(400).json({ success: false, message: `Invalid ID format: ${err.path}` });
   }
 
   if (err.name === 'ValidationError') {
@@ -119,7 +119,7 @@ mongoose.connect(process.env.MONGO_URI)
 // ─────────────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5100;
 app.listen(PORT, () => {
-  console.log(🚀 Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT});
+  console.log(`🚀 Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
