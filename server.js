@@ -90,7 +90,7 @@ app.use((err, req, res, next) => {
   console.error("Stack:", err.stack);
 
   if (err.name === 'CastError' && err.kind === 'ObjectId') {
-    return res.status(400).json({ success: false, message: Invalid ID format: ${err.path} });
+return res.status(400).json({ success: false, message: `Invalid ID format: ${err.path}` });
   }
 
   if (err.name === 'ValidationError') {
