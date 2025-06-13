@@ -22,22 +22,30 @@ const app = express(); // Initialize Express app
 // 2. CORS CONFIGURATION
 // ─────────────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
-  'http://localhost:62088',            // Flutter Web dev
+  'http://localhost:58484',             // ✅ your Flutter Web dev origin (dynamic port)
+  'http://localhost:62088',             // ✅ if using another Flutter port
+  'http://127.0.0.1:58484',
   'http://127.0.0.1:62088',
-  'http://localhost:5173',             // Vite/React Dev
-  'https://intelliface-admin.web.app', // Production domain
+  'https://intelliface-admin.web.app',  // ✅ your deployed frontend (Firebase, etc.)
+  'https://intelliface-api.onrender.com', // Optional: allow self-origin
 ];
 
-app.use(cors({
+const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error('CORS: Origin not allowed'));
+    console.log('🌐 Incoming Origin:', origin);
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log('❌ CORS Blocked:', origin);
+      callback(new Error('CORS: Origin not allowed'));
+    }
   },
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: false,
-}));
-app.options('*', cors()); // Allow preflight requests
+};
+
+app.use(cors(corsOptions));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. MIDDLEWARE
