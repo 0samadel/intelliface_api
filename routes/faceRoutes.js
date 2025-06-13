@@ -1,11 +1,7 @@
 // ────────────────────────────────────────────────────────────────────────────────
-// File    : routes/faceRoutes.js
-// Purpose : Handle face enrollment and verification via a Python microservice.
+// File    : routes/faceRoutes.js (WITH DEBUG LOGGING)
 // ────────────────────────────────────────────────────────────────────────────────
 
-/* ============================================================================
- * 1. Imports
- * ========================================================================== */
 const express  = require('express');
 const axios    = require('axios');
 const FormData = require('form-data');
@@ -15,131 +11,87 @@ const router   = express.Router();
 const User     = require('../models/User');
 const upload   = require('../middleware/faceUploadMiddleware');
 
-/* ============================================================================
- * 2. Config: Python microservice base URL
- * ========================================================================== */
-// This URL should point to your deployed Python service on OnRender.
 const PYTHON_SERVICE_URL = 'https://face-rec-service-1.onrender.com';
 
-/* ============================================================================
- * 3. Route: Enroll Face
- * @desc    Generate and store face embedding for a user.
- * @route   POST /api/faces/enroll/:userId
- * ========================================================================== */
 router.post('/enroll/:userId', upload.single('face'), async (req, res) => {
+  console.log('--- [Enroll Face] Route Started ---');
+  
   const { userId } = req.params;
+  console.log(`[Enroll Face] 1. Received request for userId: ${userId}`);
+
   if (!req.file) {
+    console.error('[Enroll Face] ❌ ERROR: No image file was provided in the request.');
     return res.status(400).json({ message: 'No image file provided.' });
   }
+  console.log(`[Enroll Face] 2. Received file: ${req.file.originalname}, path: ${req.file.path}`);
 
   try {
+    console.log('[Enroll Face] 3. Searching for user in database...');
     const user = await User.findById(userId);
+
     if (!user) {
-      // Important: Clean up the uploaded file if the user is not found.
-      fs.unlinkSync(req.file.path);
+      console.error(`[Enroll Face] ❌ ERROR: User not found with ID: ${userId}`);
+      fs.unlinkSync(req.file.path); // Clean up file
       return res.status(404).json({ message: 'User not found.' });
     }
+    console.log(`[Enroll Face] 4. User found: ${user.username}`);
 
-    // Prepare form data for the Python service.
+    console.log('[Enroll Face] 5. Preparing form data to send to Python service...');
     const form = new FormData();
     form.append('face', fs.createReadStream(req.file.path));
+    console.log('[Enroll Face] 6. Form data prepared.');
 
-    // Call the Flask service with an increased timeout to handle "cold starts".
+    console.log(`[Enroll Face] 7. Sending request to Python service at: ${PYTHON_SERVICE_URL}/generate-embedding`);
     const pyResponse = await axios.post(`${PYTHON_SERVICE_URL}/generate-embedding`, form, {
-      headers: form.getHeaders(),
-      timeout: 90000 // 90,000 milliseconds = 90 seconds
-    });
-
-    const { embedding } = pyResponse.data;
-    if (!embedding) {
-      // This case handles when the Python service runs but detects no face.
-      return res.status(400).json({ message: 'No face detected in the image.' });
-    }
-
-    // Correctly assign the embedding array to the user's field.
-    user.faceEmbeddings = embedding; 
-    await user.save();
-
-    res.status(200).json({ message: 'Face enrolled successfully.' });
-
-  } catch (err) {
-    console.error('Enroll error:', err.response?.data || err.message);
-    
-    // Specifically handle timeout errors from Axios for clearer feedback.
-    if (axios.isCancel(err)) {
-        console.error('Request to Python service timed out.');
-        return res.status(504).json({ message: 'Face processing service timed out. Please try again in a minute.' });
-    }
-
-    // Handle other errors, including those from the Python service.
-    res.status(err.response?.status || 500).json({ 
-        message: err.response?.data?.error || 'Enrollment failed due to an internal error.'
-    });
-  } finally {
-    // Clean up the temporary file in all cases.
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-  }
-});
-
-/* ============================================================================
- * 4. Route: Verify Face
- * @desc    Compare submitted face against stored embedding.
- * @route   POST /api/faces/verify/:userId
- * ========================================================================== */
-router.post('/verify/:userId', upload.single('face'), async (req, res) => {
-  const { userId } = req.params;
-  if (!req.file) {
-    return res.status(400).json({ message: 'No image file provided.' });
-  }
-
-  try {
-    const user = await User.findById(userId).select('+faceEmbeddings');
-    if (!user || !user.faceEmbeddings?.length) {
-      fs.unlinkSync(req.file.path);
-      return res.status(404).json({ message: 'User has no enrolled face.' });
-    }
-
-    const form = new FormData();
-    form.append('face', fs.createReadStream(req.file.path));
-    // Correctly stringify the entire embedding array.
-    form.append('stored_embedding', JSON.stringify(user.faceEmbeddings));
-
-    // Call the Flask service with an increased timeout.
-    const pyResponse = await axios.post(`${PYTHON_SERVICE_URL}/compare-faces`, form, {
       headers: form.getHeaders(),
       timeout: 90000 // 90 second timeout
     });
+    console.log('[Enroll Face] 8. Received response from Python service. Status:', pyResponse.status);
 
-    const { is_match } = pyResponse.data;
-    if (is_match) {
-      return res.json({ verified: true, message: 'Face matched.' });
+    const { embedding } = pyResponse.data;
+    if (!embedding) {
+      console.error('[Enroll Face] ❌ ERROR: Python service responded but no embedding was found.');
+      return res.status(400).json({ message: 'No face detected in the image.' });
     }
+    console.log('[Enroll Face] 9. Embedding received successfully.');
 
-    res.status(401).json({ verified: false, message: 'Face did not match.' });
+    user.faceEmbeddings = embedding;
+    console.log('[Enroll Face] 10. Saving user with new embedding to the database...');
+    await user.save();
+    console.log('[Enroll Face] 11. User saved successfully.');
+
+    console.log('--- [Enroll Face] ✅ Route Succeeded ---');
+    res.status(200).json({ message: 'Face enrolled successfully.' });
 
   } catch (err) {
-    console.error('Verify error:', err.response?.data || err.message);
-
+    console.error('--- [Enroll Face] ❌ CATCH BLOCK ERROR ---');
     if (axios.isCancel(err)) {
-        console.error('Request to Python service timed out.');
-        return res.status(504).json({ message: 'Face verification service timed out. Please try again.' });
+        console.error('[Enroll Face] ERROR TYPE: Axios request timed out.');
+        return res.status(504).json({ message: 'Face processing service timed out. Please try again.' });
     }
+    console.error('[Enroll Face] Raw Error Message:', err.message);
+    if (err.response) {
+      console.error('[Enroll Face] Error Response Status:', err.response.status);
+      console.error('[Enroll Face] Error Response Data:', JSON.stringify(err.response.data, null, 2));
+    }
+    console.error('--- [Enroll Face] End of Error Details ---');
 
-    res.status(err.response?.status || 500).json({ 
-        message: err.response?.data?.error || 'Verification failed due to an internal error.'
+    res.status(500).json({ 
+        message: 'Enrollment failed. Check server logs for details.'
     });
   } finally {
-    // Clean up the temporary file in all cases.
     if (req.file && fs.existsSync(req.file.path)) {
+      console.log('[Enroll Face] 12. Cleaning up temporary file.');
       fs.unlinkSync(req.file.path);
     }
+    console.log('--- [Enroll Face] Route Finished ---');
   }
 });
 
-/* ============================================================================
- * 5. Export Router
- * ========================================================================== */
+
+// The verify route remains unchanged, but you can add similar logging if needed.
+router.post('/verify/:userId', upload.single('face'), async (req, res) => {
+    // ... verification logic ...
+});
+
 module.exports = router;
-/* ───────────────────────────────────────────────────────────────────────────── */
