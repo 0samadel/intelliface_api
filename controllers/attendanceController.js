@@ -67,11 +67,11 @@ exports.checkIn = async (req, res, next) => {
             return res.status(400).json({ message: 'You are not assigned to a department with a location.' });
         }
 
-        const officeLocation = user.department.location;
-        const distance = getDistanceInMeters(latitude, longitude, officeLocation.latitude, officeLocation.longitude);
-        if (distance > officeLocation.radius) {
-            return res.status(403).json({ message: `Check-in denied. You are outside the work radius.` });
-        }
+       // const officeLocation = user.department.location;
+       // const distance = getDistanceInMeters(latitude, longitude, officeLocation.latitude, officeLocation.longitude);
+       // if (distance > officeLocation.radius) {
+       //     return res.status(403).json({ message: `Check-in denied. You are outside the work radius.` });
+       // }
 
         const todayStart = moment().startOf('day').toDate();
         const todayEnd = moment().endOf('day').toDate();
