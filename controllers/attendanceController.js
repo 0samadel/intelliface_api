@@ -46,7 +46,8 @@ exports.checkIn = async (req, res, next) => {
         // --- Step 1: Face Verification ---
         const form = new FormData();
         form.append('face', req.file.buffer, { filename: req.file.originalname });
-        form.append('stored_embedding', JSON.stringify(user.faceEmbeddings));
+        form.append('stored_embedding', JSON.stringify(user.faceEmbeddings[0]));
+
 
         const pyResponse = await axios.post(`${PYTHON_SERVICE_URL}/compare-faces`, form, {
             timeout: AXIOS_TIMEOUT
