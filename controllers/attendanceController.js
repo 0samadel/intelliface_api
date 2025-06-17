@@ -88,7 +88,10 @@ exports.checkIn = async (req, res, next) => {
         console.error('Check-in Controller Error:', error.response?.data || error.message);
         const message = error.response?.data?.message || "Check-in process failed.";
         const status = error.response?.status || 500;
-        res.status(status).json({ message });
+        res.status(status).json({
+            message,
+            error: error.response?.data || error.message || "Unknown error"
+        });
     }
 };
 
