@@ -1,6 +1,7 @@
 // ────────────────────────────────────────────────────────────────────────────────
-// File    : controllers/attendanceController.js (FINALIZED WITH WORKING HOURS)
-// Purpose : Handles check-in/out logic including face verification and working time.
+// File    : controllers/attendanceController.js (FINALIZED)
+// Purpose : Handles check-in/out logic by first verifying the face via the
+//           face verification service, then handling attendance logic.
 // ────────────────────────────────────────────────────────────────────────────────
 
 const Attendance = require('../models/Attendance');
@@ -42,9 +43,17 @@ exports.checkIn = async (req, res, next) => {
             return res.status(404).json({ message: 'User not found or face is not enrolled.' });
         }
 
+        const embedding = Array.isArray(user.faceEmbeddings) && user.faceEmbeddings.length > 0
+            ? user.faceEmbeddings[0]
+            : null;
+
+        if (!embedding) {
+            return res.status(400).json({ message: 'User face embedding is invalid.' });
+        }
+
         const form = new FormData();
         form.append('face', req.file.buffer, { filename: req.file.originalname });
-        form.append('stored_embedding', JSON.stringify(user.faceEmbeddings[0]));
+        form.append('stored_embedding', JSON.stringify(embedding));
 
         const pyResponse = await axios.post(`${PYTHON_SERVICE_URL}/compare-faces`, form, {
             timeout: AXIOS_TIMEOUT
@@ -58,11 +67,11 @@ exports.checkIn = async (req, res, next) => {
             return res.status(400).json({ message: 'You are not assigned to a department with a location.' });
         }
 
-        const officeLocation = user.department.location;
-        const distance = getDistanceInMeters(latitude, longitude, officeLocation.latitude, officeLocation.longitude);
-        if (distance > officeLocation.radius) {
-            return res.status(403).json({ message: `Check-in denied. You are outside the work radius.` });
-        }
+       const officeLocation = user.department.location;
+       const distance = getDistanceInMeters(latitude, longitude, officeLocation.latitude, officeLocation.longitude);
+       if (distance > officeLocation.radius) {
+         return res.status(403).json({ message: `Check-in denied. You are outside the work radius.` });
+      }
 
         const todayStart = moment().startOf('day').toDate();
         const todayEnd = moment().endOf('day').toDate();
@@ -81,6 +90,7 @@ exports.checkIn = async (req, res, next) => {
             status,
             location: { latitude, longitude }
         });
+
         await attendance.save();
 
         const newRecord = await Attendance.findById(attendance._id).populate('userId', 'fullName employeeId');
@@ -110,9 +120,17 @@ exports.checkOut = async (req, res, next) => {
             return res.status(404).json({ message: 'User not found or face not enrolled.' });
         }
 
+        const embedding = Array.isArray(user.faceEmbeddings) && user.faceEmbeddings.length > 0
+            ? user.faceEmbeddings[0]
+            : null;
+
+        if (!embedding) {
+            return res.status(400).json({ message: 'User face embedding is invalid.' });
+        }
+
         const form = new FormData();
         form.append('face', req.file.buffer, { filename: req.file.originalname });
-        form.append('stored_embedding', JSON.stringify(user.faceEmbeddings));
+        form.append('stored_embedding', JSON.stringify(embedding));
 
         const pyResponse = await axios.post(`${PYTHON_SERVICE_URL}/compare-faces`, form, {
             timeout: AXIOS_TIMEOUT
@@ -137,61 +155,53 @@ exports.checkOut = async (req, res, next) => {
         await attendanceRecord.save();
 
         const updatedRecord = await Attendance.findById(attendanceRecord._id).populate('userId', 'fullName employeeId');
-
-        const workedMinutes = moment(updatedRecord.checkOutTime).diff(moment(updatedRecord.checkInTime), 'minutes');
-        const workingTime = {
-            hours: Math.floor(workedMinutes / 60),
-            minutes: workedMinutes % 60
-        };
-
-        res.status(200).json({
-            message: 'Checked out successfully!',
-            attendance: {
-                ...updatedRecord.toObject(),
-                workingTime
-            }
-        });
+        res.status(200).json({ message: 'Checked out successfully!', attendance: updatedRecord });
 
     } catch (error) {
         console.error('Check-out Controller Error:', error.response?.data || error.message);
         const message = error.response?.data?.message || "Check-out process failed.";
         const status = error.response?.status || 500;
-        res.status(status).json({ message });
+        res.status(status).json({
+            message,
+            error: error.response?.data || error.message || "Unknown error"
+        });
     }
 };
 
-// ================== GET ALL ==================
+// ================== ADMIN FUNCTIONS ==================
 exports.getAllAttendance = async (req, res) => {
-  try {
-    const records = await Attendance.find().sort({ checkInTime: -1 }).populate('userId', 'fullName username employeeId');
-    res.json(records);
-  } catch (err) {
-    res.status(500).json({ message: 'Server error: ' + err.message });
-  }
-};
-
-// ================== DELETE ==================
-exports.deleteAttendance = async (req, res) => {
-  try {
-    const deletedRecord = await Attendance.findByIdAndDelete(req.params.id);
-    if (!deletedRecord) {
-      return res.status(404).json({ message: 'Attendance record not found.' });
+    try {
+        const records = await Attendance.find().sort({ checkInTime: -1 }).populate('userId', 'fullName username employeeId');
+        res.json(records);
+    } catch (err) {
+        res.status(500).json({ message: 'Server error: ' + err.message });
     }
-    res.json({ message: 'Attendance record deleted successfully.' });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error: ' + err.message });
-  }
 };
 
-// ================== GET TODAY FOR USER ==================
+exports.deleteAttendance = async (req, res) => {
+    try {
+        const deletedRecord = await Attendance.findByIdAndDelete(req.params.id);
+        if (!deletedRecord) {
+            return res.status(404).json({ message: 'Attendance record not found.' });
+        }
+        res.json({ message: 'Attendance record deleted successfully.' });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error: ' + err.message });
+    }
+};
+
 exports.getTodaysAttendanceForUser = async (req, res) => {
-  try {
-    const userIdFromToken = req.user.userId;
-    const todayStart = moment().startOf('day').toDate();
-    const todayEnd = moment().endOf('day').toDate();
-    const attendanceRecord = await Attendance.findOne({ userId: userIdFromToken, checkInTime: { $gte: todayStart, $lte: todayEnd } }).populate('userId', 'fullName employeeId');
-    res.status(200).json(attendanceRecord);
-  } catch (err) {
-    res.status(500).json({ message: 'Server error while fetching today\'s attendance.' });
-  }
+    try {
+        const userIdFromToken = req.user.userId;
+        const todayStart = moment().startOf('day').toDate();
+        const todayEnd = moment().endOf('day').toDate();
+        const attendanceRecord = await Attendance.findOne({
+            userId: userIdFromToken,
+            checkInTime: { $gte: todayStart, $lte: todayEnd }
+        }).populate('userId', 'fullName employeeId');
+
+        res.status(200).json(attendanceRecord); // Send record or null
+    } catch (err) {
+        res.status(500).json({ message: 'Server error while fetching today\'s attendance.' });
+    }
 };
