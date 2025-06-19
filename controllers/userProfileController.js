@@ -1,30 +1,12 @@
-// ────────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // controllers/userProfileController.js
-// Purpose  : Manage the logged-in user's own profile (GET, UPDATE, Photo Only)
-// ────────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 const User = require('../models/User');
 const fs = require('fs');
 const path = require('path');
 
-// GET /api/profile/me
-exports.getMyProfile = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.user.userId).populate('department', 'name');
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
-    const userProfile = user.toObject();
-    delete userProfile.password;
-    delete userProfile.faceEmbeddings;
-    res.status(200).json({ success: true, data: userProfile });
-  } catch (error) {
-    console.error('❌ Error fetching user profile:', error);
-    next(error);
-  }
-};
-
-// PUT /api/profile/me/photo
+// PUT /api/faces/profile
 exports.updateProfilePhoto = async (req, res, next) => {
   try {
     const userId = req.user.userId;
@@ -37,15 +19,15 @@ exports.updateProfilePhoto = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'No image file provided' });
     }
 
-    // Delete old profile picture if it exists
+    // Delete old image if exists
     if (user.profilePicture && user.profilePicture.startsWith('uploads/')) {
       const oldPicPath = path.join(__dirname, '..', user.profilePicture);
       if (fs.existsSync(oldPicPath)) {
         try {
           fs.unlinkSync(oldPicPath);
-          console.log('🗑️ Old profile picture deleted:', oldPicPath);
-        } catch (unlinkErr) {
-          console.error('⚠️ Error deleting old profile picture:', unlinkErr);
+          console.log('🗑️ Deleted old profile image:', oldPicPath);
+        } catch (err) {
+          console.error('⚠️ Error deleting old image:', err);
         }
       }
     }
