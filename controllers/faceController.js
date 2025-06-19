@@ -7,7 +7,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 const User = require('../models/User');
 
-const PYTHON_SERVICE_URL = 'https://face-rec-service.onrender.com';
+const PYTHON_SERVICE_URL = 'https://face-rec-service-1.onrender.com';
 const AXIOS_TIMEOUT = 90000; // 90 seconds
 
 /**
