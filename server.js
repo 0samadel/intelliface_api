@@ -25,7 +25,7 @@ const app = express(); // Initialize Express app
 
 // Define allowed origins (frontend URLs)
 const allowedOrigins = [
-  'https://intelliface-admin.vercel.app', // ✅ Vercel deployment
+  'https://intelliface.vercel.app', // ✅ Vercel deployment
   'https://intelliface-admin.web.app',    // Optional: Firebase
   'http://localhost:3000',                // Local frontend
   'http://localhost:5000',                // Local dev API use
