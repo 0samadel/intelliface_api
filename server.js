@@ -23,39 +23,37 @@ const app = express(); // Initialize Express app
 // 2. CORS CONFIGURATION
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Define your single, most important production origin.
-const productionOrigin = 'https://intelliface-admin.web.app';
+// Define allowed origins (frontend URLs)
+const allowedOrigins = [
+  'https://intelliface-admin.vercel.app', // ✅ Vercel deployment
+  'https://intelliface-admin.web.app',    // Optional: Firebase
+  'http://localhost:3000',                // Local frontend
+  'http://localhost:5000',                // Local dev API use
+];
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // The 'origin' variable is the URL of the site making the request.
-    // e.g., 'http://localhost:62780' or 'https://intelliface-admin.web.app'
     console.log('🌐 Incoming Request Origin:', origin);
 
-    // 1. Allow requests with no origin (like mobile apps, Postman, or server-to-server requests)
+    // 1. Allow requests with no origin (e.g., Postman, mobile apps)
     if (!origin) {
       console.log('✅ CORS Allowed: No origin (e.g., Postman)');
       return callback(null, true);
     }
-    
-    // 2. Always allow your deployed frontend
-    if (origin === productionOrigin) {
-      console.log('✅ CORS Allowed: Production origin');
+
+    // 2. Allow whitelisted origins
+    if (allowedOrigins.includes(origin)) {
+      console.log('✅ CORS Allowed:', origin);
       return callback(null, true);
     }
 
-    // 3. Allow any origin from 'localhost' on any port for development
-    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
-      console.log('✅ CORS Allowed: Localhost development');
-      return callback(null, true);
-    }
-
-    // 4. Block everything else
-    console.log('❌ CORS Blocked: Origin not in allowed list');
+    // 3. Block everything else
+    console.log('❌ CORS Blocked:', origin);
     return callback(new Error('Not allowed by CORS'));
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
 };
 
 app.use(cors(corsOptions));
